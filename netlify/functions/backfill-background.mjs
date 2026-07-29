@@ -14,7 +14,7 @@ export default async () => {
   const end = ymdInTZ(new Date());
   const start = "2000-01-01"; // effectively "all history"
   try {
-    const map = await revenueByDay(start, end);
+    const map = await revenueByDay(start, end, "America/New_York", { readAll: true });
     const series = Object.fromEntries(map);
     await writeSeries(series);
     console.log(`[backfill] basis=${REVENUE_BASIS} wrote ${Object.keys(series).length} days`);
