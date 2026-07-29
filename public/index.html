@@ -110,6 +110,26 @@
   .foot { font-size: 12px; color: var(--text-muted); margin-top: 14px; }
   code { background: var(--grid); padding: 1px 5px; border-radius: 4px; }
 
+  /* daily table */
+  .table-card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px; margin-top: 16px; overflow: hidden; }
+  .table-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .table-head .cap { font-size: 13px; color: var(--text-secondary); }
+  .ghost-btn.small { padding: 5px 10px; font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  thead th {
+    text-align: left; padding: 10px 16px; font-size: 12px; color: var(--text-muted);
+    font-weight: 600; cursor: pointer; user-select: none; white-space: nowrap;
+    border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface-1);
+  }
+  thead th.num { text-align: right; }
+  thead th:hover { color: var(--text-secondary); }
+  thead th .arr { display: inline-block; width: 10px; color: var(--series-1); }
+  tbody td { padding: 9px 16px; border-bottom: 1px solid var(--grid); }
+  tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr:hover { background: var(--series-1-soft); }
+  .table-scroll { max-height: 420px; overflow-y: auto; }
+
   @media (max-width: 560px) { .tiles { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -143,6 +163,24 @@
   <div class="card">
     <div id="chartHost"><div class="empty" id="emptyMsg">Loading…</div></div>
     <div class="tooltip" id="tooltip"></div>
+  </div>
+
+  <div class="table-card">
+    <div class="table-head">
+      <span class="cap" id="tableCap">Daily payments</span>
+      <button class="ghost-btn small" id="csvBtn">Download CSV</button>
+    </div>
+    <div class="table-scroll">
+      <table id="dayTable">
+        <thead>
+          <tr>
+            <th data-key="date">Date <span class="arr" data-arr="date"></span></th>
+            <th data-key="revenue" class="num">Amount <span class="arr" data-arr="revenue"></span></th>
+          </tr>
+        </thead>
+        <tbody id="dayTableBody"></tbody>
+      </table>
+    </div>
   </div>
 
   <div class="foot" id="foot"></div>
@@ -263,6 +301,8 @@ function render() {
     " · from Printavo · updates nightly";
   setStats(rows);
 
+  renderTable(rows);
+
   const host = $("chartHost");
   if (rows.length === 0) {
     host.innerHTML = `<div class="empty">No revenue recorded yet.<br>Click <b>Backfill history</b> to pull past days from Printavo, or wait for tonight's snapshot.</div>`;
@@ -271,6 +311,62 @@ function render() {
   host.innerHTML = "";
   host.appendChild(buildChart(rows));
 }
+
+// ---- sortable daily table ----
+let sortKey = "date";   // "date" | "revenue"
+let sortDir = "desc";   // "asc" | "desc"
+let tableRows = [];
+
+function renderTable(rows) {
+  tableRows = rows.slice();
+  tableRows.sort((a, b) => {
+    let cmp;
+    if (sortKey === "revenue") cmp = a.revenue - b.revenue;
+    else cmp = a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
+    return sortDir === "asc" ? cmp : -cmp;
+  });
+
+  const body = $("dayTableBody");
+  body.innerHTML = tableRows
+    .map((d) => `<tr><td>${fullDate(d.date)}</td><td class="num">${fmtUSD2.format(d.revenue)}</td></tr>`)
+    .join("");
+  if (tableRows.length === 0) {
+    body.innerHTML = `<tr><td colspan="2" style="color:var(--text-muted);padding:16px">No days in this range yet.</td></tr>`;
+  }
+
+  $("tableCap").textContent =
+    `${tableRows.length} day${tableRows.length === 1 ? "" : "s"} · ` +
+    (BASIS === "collected" ? "payments collected" : "invoiced");
+
+  // arrow indicators
+  document.querySelectorAll(".arr").forEach((el) => (el.textContent = ""));
+  const arr = document.querySelector(`.arr[data-arr="${sortKey}"]`);
+  if (arr) arr.textContent = sortDir === "asc" ? "▲" : "▼";
+}
+
+document.querySelectorAll("#dayTable thead th").forEach((th) => {
+  th.addEventListener("click", () => {
+    const key = th.dataset.key;
+    if (key === sortKey) {
+      sortDir = sortDir === "asc" ? "desc" : "asc";
+    } else {
+      sortKey = key;
+      sortDir = key === "revenue" ? "desc" : "desc"; // both default high→low / newest first
+    }
+    renderTable(inRange());
+  });
+});
+
+$("csvBtn").addEventListener("click", () => {
+  const rows = tableRows.length ? tableRows : inRange();
+  const lines = ["Date,Amount", ...rows.map((d) => `${d.date},${d.revenue.toFixed(2)}`)];
+  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "todds-daily-payments.csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
 
 // ---- SVG line/area chart, hand-built to the dataviz mark specs ----
 function buildChart(rows) {
