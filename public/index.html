@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Todd's Sporting Goods — Revenue</title>
+<style>
+  /* ---- palette (validated dataviz default; blue single series) ----
+     Vars live on :root so body (color/background) can see them; the .viz-root
+     wrapper is layout only. Dark is a *selected* set, not an auto-flip. */
+  :root {
+    color-scheme: light;
+    --page:           #f9f9f7;
+    --surface-1:      #fcfcfb;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --grid:           #e1e0d9;
+    --baseline:       #c3c2b7;
+    --series-1:       #2a78d6;
+    --series-1-soft:  rgba(42,120,214,0.12);
+    --border:         rgba(11,11,11,0.10);
+    --good:           #006300;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --page:           #0d0d0d;
+      --surface-1:      #1a1a19;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --grid:           #2c2c2a;
+      --baseline:       #383835;
+      --series-1:       #3987e5;
+      --series-1-soft:  rgba(57,135,229,0.16);
+      --border:         rgba(255,255,255,0.10);
+      --good:           #0ca30c;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page:#0d0d0d; --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7;
+    --text-muted:#898781; --grid:#2c2c2a; --baseline:#383835; --series-1:#3987e5;
+    --series-1-soft:rgba(57,135,229,0.16); --border:rgba(255,255,255,0.10); --good:#0ca30c;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--page);
+    color: var(--text-primary);
+  }
+  .viz-root { max-width: 980px; margin: 0 auto; padding: 28px 20px 60px; }
+
+  header.bar { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+  .sub { color: var(--text-secondary); font-size: 13px; margin-top: 2px; }
+  .theme-toggle {
+    border: 1px solid var(--border); background: var(--surface-1); color: var(--text-secondary);
+    border-radius: 8px; padding: 6px 10px; font-size: 12px; cursor: pointer;
+  }
+
+  /* stat tiles */
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 22px 0; }
+  .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .tile .label { font-size: 12px; color: var(--text-muted); }
+  .tile .value { font-size: 26px; font-weight: 650; margin-top: 4px; letter-spacing: -0.02em; }
+  .tile .meta { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+
+  /* controls */
+  .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  .ranges { display: flex; gap: 6px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 4px; }
+  .ranges button {
+    border: 0; background: transparent; color: var(--text-secondary);
+    padding: 6px 12px; font-size: 13px; border-radius: 7px; cursor: pointer;
+  }
+  .ranges button[aria-pressed="true"] { background: var(--series-1); color: #fff; }
+  .spacer { flex: 1; }
+  .ghost-btn {
+    border: 1px solid var(--border); background: var(--surface-1); color: var(--text-secondary);
+    border-radius: 8px; padding: 7px 12px; font-size: 13px; cursor: pointer;
+  }
+  .ghost-btn:disabled { opacity: .5; cursor: default; }
+
+  /* chart card */
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px; padding: 14px 8px 8px; position: relative; }
+  svg { display: block; width: 100%; height: auto; }
+  .tick text { fill: var(--text-muted); font-size: 11px; }
+  .gridline { stroke: var(--grid); stroke-width: 1; shape-rendering: crispEdges; }
+  .baseline { stroke: var(--baseline); stroke-width: 1; shape-rendering: crispEdges; }
+  .area { fill: var(--series-1-soft); }
+  .line { fill: none; stroke: var(--series-1); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .end-dot { fill: var(--series-1); }
+  .crosshair { stroke: var(--baseline); stroke-width: 1; stroke-dasharray: 3 3; }
+  .hover-dot { fill: var(--series-1); stroke: var(--surface-1); stroke-width: 2; }
+
+  .tooltip {
+    position: absolute; pointer-events: none; background: var(--surface-1);
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+    font-size: 12px; color: var(--text-primary); box-shadow: 0 4px 14px rgba(0,0,0,.12);
+    transform: translate(-50%, -110%); white-space: nowrap; opacity: 0; transition: opacity .08s;
+  }
+  .tooltip .t-date { color: var(--text-muted); }
+  .tooltip .t-val { font-weight: 650; }
+
+  .empty, .error { text-align: center; color: var(--text-secondary); padding: 48px 16px; font-size: 14px; }
+  .error { color: #d03b3b; }
+  .foot { font-size: 12px; color: var(--text-muted); margin-top: 14px; }
+  code { background: var(--grid); padding: 1px 5px; border-radius: 4px; }
+
+  @media (max-width: 560px) { .tiles { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="viz-root">
+  <header class="bar">
+    <div>
+      <h1>Todd's Sporting Goods — Revenue</h1>
+      <div class="sub" id="subtitle">Loading…</div>
+    </div>
+    <button class="theme-toggle" id="themeToggle">Toggle theme</button>
+  </header>
+
+  <div class="tiles">
+    <div class="tile"><div class="label">Total in range</div><div class="value" id="statTotal">—</div><div class="meta" id="statTotalMeta"></div></div>
+    <div class="tile"><div class="label">Average / day</div><div class="value" id="statAvg">—</div><div class="meta" id="statAvgMeta"></div></div>
+    <div class="tile"><div class="label">Best day</div><div class="value" id="statBest">—</div><div class="meta" id="statBestMeta"></div></div>
+  </div>
+
+  <div class="controls">
+    <div class="ranges" id="ranges">
+      <button data-days="30">30d</button>
+      <button data-days="90" aria-pressed="true">90d</button>
+      <button data-days="365">1y</button>
+      <button data-days="0">All</button>
+    </div>
+    <div class="spacer"></div>
+    <button class="ghost-btn" id="backfillBtn" title="Pull historical revenue from Printavo into the chart">Backfill history</button>
+  </div>
+
+  <div class="card">
+    <div id="chartHost"><div class="empty" id="emptyMsg">Loading…</div></div>
+    <div class="tooltip" id="tooltip"></div>
+  </div>
+
+  <div class="foot" id="foot"></div>
+</div>
+
+<script>
+const fmtUSD0 = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+const fmtUSD2 = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const $ = (id) => document.getElementById(id);
+
+let ALL = [];        // [{date, revenue}]
+let BASIS = "invoiced";
+let rangeDays = 90;
+
+// ---- theme toggle ----
+$("themeToggle").addEventListener("click", () => {
+  const cur = document.documentElement.getAttribute("data-theme");
+  const next = cur === "dark" ? "light" : (cur === "light" ? "dark" : (matchMedia("(prefers-color-scheme: dark)").matches ? "light" : "dark"));
+  document.documentElement.setAttribute("data-theme", next);
+  render();
+});
+
+// ---- range buttons ----
+$("ranges").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  [...$("ranges").children].forEach((x) => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+  rangeDays = parseInt(b.dataset.days, 10);
+  render();
+});
+
+// ---- backfill ----
+$("backfillBtn").addEventListener("click", async () => {
+  const btn = $("backfillBtn");
+  const days = rangeDays === 0 ? 730 : Math.max(rangeDays, 90);
+  btn.disabled = true; btn.textContent = "Pulling from Printavo…";
+  try {
+    const r = await fetch(`/api/backfill?days=${days}`);
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || "backfill failed");
+    await load();
+    btn.textContent = `Loaded ${j.daysWithRevenue} days`;
+    setTimeout(() => (btn.textContent = "Backfill history"), 2500);
+  } catch (err) {
+    btn.textContent = "Backfill failed — see /api/test";
+    console.error(err);
+    setTimeout(() => (btn.textContent = "Backfill history"), 3500);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+function inRange() {
+  if (rangeDays === 0 || ALL.length === 0) return ALL;
+  const cutoff = new Date(Date.now() - rangeDays * 86400000).toISOString().slice(0, 10);
+  return ALL.filter((d) => d.date >= cutoff);
+}
+
+async function load() {
+  try {
+    const r = await fetch("/api/data", { cache: "no-store" });
+    const j = await r.json();
+    ALL = j.series || [];
+    BASIS = j.basis || "invoiced";
+    render();
+  } catch (err) {
+    $("chartHost").innerHTML = `<div class="error">Couldn't load data. Check that the site is deployed and functions are live.</div>`;
+    console.error(err);
+  }
+}
+
+function setStats(rows) {
+  const total = rows.reduce((s, d) => s + d.revenue, 0);
+  const avg = rows.length ? total / rows.length : 0;
+  const best = rows.reduce((m, d) => (d.revenue > m.revenue ? d : m), { revenue: -1, date: null });
+  $("statTotal").textContent = fmtUSD0.format(total);
+  $("statTotalMeta").textContent = rows.length ? `${rows.length} day${rows.length > 1 ? "s" : ""}` : "";
+  $("statAvg").textContent = fmtUSD0.format(avg);
+  $("statAvgMeta").textContent = BASIS === "collected" ? "collected" : "invoiced";
+  $("statBest").textContent = best.date ? fmtUSD0.format(best.revenue) : "—";
+  $("statBestMeta").textContent = best.date ? prettyDate(best.date) : "";
+}
+
+function prettyDate(ymd) {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function render() {
+  const rows = inRange();
+  $("subtitle").textContent =
+    (BASIS === "collected" ? "Payments collected per day" : "Invoiced sales per day") +
+    " · from Printavo · updates nightly";
+  setStats(rows);
+
+  const host = $("chartHost");
+  if (rows.length === 0) {
+    host.innerHTML = `<div class="empty">No revenue recorded yet.<br>Click <b>Backfill history</b> to pull past days from Printavo, or wait for tonight's snapshot.</div>`;
+    return;
+  }
+  host.innerHTML = "";
+  host.appendChild(buildChart(rows));
+}
+
+// ---- SVG line/area chart, hand-built to the dataviz mark specs ----
+function buildChart(rows) {
+  const W = 920, H = 340;
+  const m = { top: 16, right: 18, bottom: 30, left: 58 };
+  const iw = W - m.left - m.right, ih = H - m.top - m.bottom;
+
+  const xs = rows.map((_, i) => i);
+  const maxV = Math.max(...rows.map((d) => d.revenue), 1);
+  const niceMax = niceCeil(maxV);
+
+  const x = (i) => m.left + (rows.length === 1 ? iw / 2 : (i / (rows.length - 1)) * iw);
+  const y = (v) => m.top + ih - (v / niceMax) * ih;
+
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", "Revenue over time");
+
+  // y gridlines + ticks
+  const ticks = 4;
+  for (let t = 0; t <= ticks; t++) {
+    const v = (niceMax / ticks) * t;
+    const gy = y(v);
+    line(svg, m.left, gy, W - m.right, gy, t === 0 ? "baseline" : "gridline");
+    const tx = document.createElementNS(NS, "text");
+    tx.setAttribute("x", m.left - 8); tx.setAttribute("y", gy + 4);
+    tx.setAttribute("text-anchor", "end");
+    tx.setAttribute("style", "fill:var(--text-muted);font-size:11px;font-variant-numeric:tabular-nums");
+    tx.textContent = fmtUSD0.format(v);
+    svg.appendChild(tx);
+  }
+
+  // x ticks (~6 evenly spaced)
+  const step = Math.max(1, Math.round(rows.length / 6));
+  for (let i = 0; i < rows.length; i += step) {
+    const tx = document.createElementNS(NS, "text");
+    tx.setAttribute("x", x(i)); tx.setAttribute("y", H - 10);
+    tx.setAttribute("text-anchor", "middle");
+    tx.setAttribute("style", "fill:var(--text-muted);font-size:11px");
+    tx.textContent = prettyDate(rows[i].date);
+    svg.appendChild(tx);
+  }
+
+  // area + line
+  const linePts = rows.map((d, i) => `${x(i)},${y(d.revenue)}`).join(" ");
+  const area = document.createElementNS(NS, "path");
+  area.setAttribute("class", "area");
+  area.setAttribute("d", `M ${x(0)},${y(0)} L ${rows.map((d, i) => `${x(i)},${y(d.revenue)}`).join(" L ")} L ${x(rows.length - 1)},${y(0)} Z`);
+  svg.appendChild(area);
+
+  const path = document.createElementNS(NS, "polyline");
+  path.setAttribute("class", "line");
+  path.setAttribute("points", linePts);
+  svg.appendChild(path);
+
+  // end dot
+  const last = rows.length - 1;
+  circle(svg, x(last), y(rows[last].revenue), 3.5, "end-dot");
+
+  // ---- hover layer ----
+  const cross = document.createElementNS(NS, "line");
+  cross.setAttribute("class", "crosshair"); cross.setAttribute("y1", m.top); cross.setAttribute("y2", m.top + ih);
+  cross.style.opacity = 0; svg.appendChild(cross);
+  const hoverDot = document.createElementNS(NS, "circle");
+  hoverDot.setAttribute("class", "hover-dot"); hoverDot.setAttribute("r", 4); hoverDot.style.opacity = 0;
+  svg.appendChild(hoverDot);
+
+  const tip = $("tooltip");
+  const overlay = document.createElementNS(NS, "rect");
+  overlay.setAttribute("x", m.left); overlay.setAttribute("y", m.top);
+  overlay.setAttribute("width", iw); overlay.setAttribute("height", ih);
+  overlay.setAttribute("fill", "transparent");
+  svg.appendChild(overlay);
+
+  function moveHandler(evt) {
+    const rect = svg.getBoundingClientRect();
+    const px = (evt.clientX - rect.left) / rect.width * W;
+    let i = Math.round(((px - m.left) / iw) * (rows.length - 1));
+    i = Math.max(0, Math.min(rows.length - 1, i));
+    const cx = x(i), cy = y(rows[i].revenue);
+    cross.setAttribute("x1", cx); cross.setAttribute("x2", cx); cross.style.opacity = 1;
+    hoverDot.setAttribute("cx", cx); hoverDot.setAttribute("cy", cy); hoverDot.style.opacity = 1;
+    tip.innerHTML = `<div class="t-date">${fullDate(rows[i].date)}</div><div class="t-val">${fmtUSD2.format(rows[i].revenue)}</div>`;
+    tip.style.left = (cx / W * rect.width) + "px";
+    tip.style.top = (cy / H * rect.height) + "px";
+    tip.style.opacity = 1;
+  }
+  function leaveHandler() { cross.style.opacity = 0; hoverDot.style.opacity = 0; tip.style.opacity = 0; }
+  svg.addEventListener("mousemove", moveHandler);
+  svg.addEventListener("mouseleave", leaveHandler);
+
+  return svg;
+}
+
+function fullDate(ymd) {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+}
+function niceCeil(v) {
+  const pow = Math.pow(10, Math.floor(Math.log10(v)));
+  const n = v / pow;
+  const step = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10;
+  return step * pow;
+}
+function line(svg, x1, y1, x2, y2, cls) {
+  const NS = "http://www.w3.org/2000/svg";
+  const l = document.createElementNS(NS, "line");
+  l.setAttribute("x1", x1); l.setAttribute("y1", y1); l.setAttribute("x2", x2); l.setAttribute("y2", y2);
+  l.setAttribute("class", cls); svg.appendChild(l);
+}
+function circle(svg, cx, cy, r, cls) {
+  const NS = "http://www.w3.org/2000/svg";
+  const c = document.createElementNS(NS, "circle");
+  c.setAttribute("cx", cx); c.setAttribute("cy", cy); c.setAttribute("r", r); c.setAttribute("class", cls);
+  svg.appendChild(c);
+}
+
+$("foot").innerHTML = `Nightly snapshot at ~00:15 ET records the prior day. To load history now, use <b>Backfill history</b>. Trouble? Hit <code>/api/test</code>.`;
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+# Todd's Sporting Goods — Printavo revenue dashboard
+# Netlify site config.
+
+[build]
+  publish   = "public"
+  functions = "netlify/functions"
+
+[functions]
+  # Netlify Functions v2 (ESM). Node 18+ gives us a global fetch, so no HTTP lib needed.
+  node_bundler = "esbuild"
+
+# Nice, short URLs for the JSON endpoints the dashboard calls.
+[[redirects]]
+  from = "/api/data"
+  to   = "/.netlify/functions/get-data"
+  status = 200
+
+[[redirects]]
+  from = "/api/backfill"
+  to   = "/.netlify/functions/backfill"
+  status = 200
+
+[[redirects]]
+  from = "/api/test"
+  to   = "/.netlify/functions/test-connection"
+  status = 200
