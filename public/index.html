@@ -77,6 +77,13 @@
     padding: 6px 12px; font-size: 13px; border-radius: 7px; cursor: pointer;
   }
   .ranges button[aria-pressed="true"] { background: var(--series-1); color: #fff; }
+  .daterange { display: flex; align-items: center; gap: 6px; }
+  .daterange .arrow { color: var(--text-muted); font-size: 13px; }
+  .daterange input[type="date"] {
+    background: var(--surface-1); border: 1px solid var(--border); color: var(--text-primary);
+    border-radius: 8px; padding: 6px 8px; font-size: 13px; font-family: inherit;
+    color-scheme: light dark;
+  }
   .spacer { flex: 1; }
   .ghost-btn {
     border: 1px solid var(--border); background: var(--surface-1); color: var(--text-secondary);
@@ -156,6 +163,13 @@
       <button data-days="365">1y</button>
       <button data-days="0">All</button>
     </div>
+    <div class="daterange">
+      <input type="date" id="fromDate" aria-label="From date" />
+      <span class="arrow">→</span>
+      <input type="date" id="toDate" aria-label="To date" />
+      <button class="ghost-btn small" id="applyRange">Apply</button>
+      <button class="ghost-btn small" id="clearRange" style="display:none">Clear</button>
+    </div>
     <div class="spacer"></div>
     <button class="ghost-btn" id="backfillBtn" title="Pull historical revenue from Printavo into the chart">Backfill history</button>
   </div>
@@ -194,6 +208,7 @@ const $ = (id) => document.getElementById(id);
 let ALL = [];        // [{date, revenue}]
 let BASIS = "invoiced";
 let rangeDays = 90;
+let customStart = null, customEnd = null;  // custom date-range override
 
 // ---- theme toggle ----
 $("themeToggle").addEventListener("click", () => {
@@ -206,8 +221,30 @@ $("themeToggle").addEventListener("click", () => {
 // ---- range buttons ----
 $("ranges").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
+  customStart = customEnd = null;                 // presets clear any custom range
+  $("clearRange").style.display = "none";
+  $("fromDate").value = ""; $("toDate").value = "";
   [...$("ranges").children].forEach((x) => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
   rangeDays = parseInt(b.dataset.days, 10);
+  render();
+});
+
+// ---- custom date range ----
+$("applyRange").addEventListener("click", () => {
+  const f = $("fromDate").value, t = $("toDate").value;
+  if (!f || !t) return;
+  customStart = f <= t ? f : t;                   // tolerate reversed inputs
+  customEnd = f <= t ? t : f;
+  [...$("ranges").children].forEach((x) => x.setAttribute("aria-pressed", "false"));
+  $("clearRange").style.display = "";
+  render();
+});
+$("clearRange").addEventListener("click", () => {
+  customStart = customEnd = null;
+  $("fromDate").value = ""; $("toDate").value = "";
+  $("clearRange").style.display = "none";
+  rangeDays = 90;
+  [...$("ranges").children].forEach((x) => x.setAttribute("aria-pressed", x.dataset.days === "90" ? "true" : "false"));
   render();
 });
 
@@ -259,6 +296,9 @@ $("backfillBtn").addEventListener("click", async () => {
 });
 
 function inRange() {
+  if (customStart && customEnd) {
+    return ALL.filter((d) => d.date >= customStart && d.date <= customEnd);
+  }
   if (rangeDays === 0 || ALL.length === 0) return ALL;
   const cutoff = new Date(Date.now() - rangeDays * 86400000).toISOString().slice(0, 10);
   return ALL.filter((d) => d.date >= cutoff);
@@ -281,8 +321,10 @@ function setStats(rows) {
   const total = rows.reduce((s, d) => s + d.revenue, 0);
   const avg = rows.length ? total / rows.length : 0;
   const best = rows.reduce((m, d) => (d.revenue > m.revenue ? d : m), { revenue: -1, date: null });
-  $("statTotal").textContent = fmtUSD0.format(total);
-  $("statTotalMeta").textContent = rows.length ? `${rows.length} day${rows.length > 1 ? "s" : ""}` : "";
+  $("statTotal").textContent = fmtUSD2.format(total);
+  $("statTotalMeta").textContent = (customStart && customEnd)
+    ? `${prettyDate(customStart)} – ${prettyDate(customEnd)}`
+    : (rows.length ? `${rows.length} day${rows.length > 1 ? "s" : ""}` : "");
   $("statAvg").textContent = fmtUSD0.format(avg);
   $("statAvgMeta").textContent = BASIS === "collected" ? "collected" : "invoiced";
   $("statBest").textContent = best.date ? fmtUSD0.format(best.revenue) : "—";
