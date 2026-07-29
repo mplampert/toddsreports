@@ -17,10 +17,8 @@ const PRINTAVO_ENDPOINT = "https://www.printavo.com/api/v2";
 // Which number counts as "revenue" for a given calendar day.
 //   "invoiced"  -> sum of invoice totals for invoices dated that day (sales).
 //   "collected" -> sum of payment amounts received that day (cash in).
-// Default is "collected" — money actually received (paid invoices), which is
-// what Todd's counts and what matches Printavo's "Revenue and Expenses" report.
-// Set PRINTAVO_REVENUE_BASIS=invoiced to switch to sales-booked (invoice totals).
-export const REVENUE_BASIS = process.env.PRINTAVO_REVENUE_BASIS || "collected";
+// Default is invoiced. Change this one string to flip the whole dashboard.
+export const REVENUE_BASIS = process.env.PRINTAVO_REVENUE_BASIS || "invoiced";
 
 // The invoice money field to sum when REVENUE_BASIS === "invoiced".
 // Printavo invoices expose several money fields; "total" is the order total.
@@ -31,10 +29,7 @@ const INVOICE_TOTAL_FIELD = "total";
 
 // The timestamp field used to bucket a record into a day.
 const INVOICE_DATE_FIELD = "createdAt";
-// A Printavo Payment carries `amount` and `transactionDate` (the day the money
-// was received). transactions is a UNION, so these are read via an inline
-// fragment (see TRANSACTIONS_QUERY); non-Payment members are ignored.
-const TRANSACTION_DATE_FIELD = "transactionDate";
+const TRANSACTION_DATE_FIELD = "createdAt";
 const TRANSACTION_AMOUNT_FIELD = "amount";
 
 // Page size for pagination. Kept small so one day's pull is a couple requests.
@@ -152,19 +147,10 @@ const INVOICES_QUERY = `
     }
   }`;
 
-// transactions returns a TransactionUnion (members: Payment, Refund, Return,
-// Expense). You can't select fields directly on a union, so we pull Payment
-// fields via an inline fragment. Other members come back as just __typename and
-// are ignored (they have no `amount`, so they contribute 0). This feed has NO
-// date filter and NO sort argument, so the collected path reads the whole
-// payment history and buckets client-side — hence the background backfill.
 const TRANSACTIONS_QUERY = `
   query Transactions($first: Int!, $after: String) {
     transactions(first: $first, after: $after) {
-      nodes {
-        __typename
-        ... on Payment { ${TRANSACTION_AMOUNT_FIELD} ${TRANSACTION_DATE_FIELD} }
-      }
+      nodes { id ${TRANSACTION_DATE_FIELD} ${TRANSACTION_AMOUNT_FIELD} }
       pageInfo { hasNextPage endCursor }
     }
   }`;
@@ -179,16 +165,12 @@ export async function revenueByDay(startYmd, endYmd, tz = "America/New_York") {
   const dateField = invoiced ? INVOICE_DATE_FIELD : TRANSACTION_DATE_FIELD;
   const valueField = invoiced ? INVOICE_TOTAL_FIELD : TRANSACTION_AMOUNT_FIELD;
   const rootKey = invoiced ? "invoices" : "transactions";
-  // Invoices are sorted newest-first (VISUAL_ID desc), so we can stop early once
-  // a page is entirely older than the window. Transactions have NO sort, so we
-  // must read every page — no early stop, higher page guard.
-  const earlyStop = invoiced;
 
   const totals = new Map();
   let after = null;
   let guard = 0; // hard stop so a bad cursor can never loop forever
 
-  while (guard++ < 4000) {
+  while (guard++ < 400) {
     const data = await printavoQuery(query, { first: PAGE_SIZE, after });
     const { nodes, pageInfo } = connectionNodes(data[rootKey]);
     if (nodes.length === 0) break;
@@ -208,14 +190,11 @@ export async function revenueByDay(startYmd, endYmd, tz = "America/New_York") {
       totals.set(day, (totals.get(day) || 0) + amt);
     }
 
-    // Newest-first (invoices only): once an entire page is older than the
-    // window start, stop. Never applied to the unordered transactions feed.
-    if (earlyStop) {
-      const oldestOnPage = nodes
-        .map((n) => (n[dateField] ? toYmd(n[dateField], tz) : "9999-99-99"))
-        .reduce((a, b) => (a < b ? a : b), "9999-99-99");
-      if (oldestOnPage < startYmd && allBeforeWindow) break;
-    }
+    // Newest-first: once an entire page is older than the window start, stop.
+    const oldestOnPage = nodes
+      .map((n) => (n[dateField] ? toYmd(n[dateField], tz) : "9999-99-99"))
+      .reduce((a, b) => (a < b ? a : b), "9999-99-99");
+    if (oldestOnPage < startYmd && allBeforeWindow) break;
 
     if (!pageInfo.hasNextPage) break;
     after = pageInfo.endCursor;

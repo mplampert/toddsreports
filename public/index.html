@@ -174,24 +174,50 @@ $("ranges").addEventListener("click", (e) => {
 });
 
 // ---- backfill ----
+// The backfill is a BACKGROUND job: it returns 202 right away and keeps running
+// on Netlify (reading Printavo's whole payment history takes a minute or two).
+// So we kick it off, then poll /api/data until the stored series changes.
+function sig(series) {
+  return (series || []).length + "|" + (series || []).reduce((s, d) => s + d.revenue, 0);
+}
 $("backfillBtn").addEventListener("click", async () => {
   const btn = $("backfillBtn");
-  const days = rangeDays === 0 ? 730 : Math.max(rangeDays, 90);
-  btn.disabled = true; btn.textContent = "Pulling from Printavo…";
+  btn.disabled = true;
+  btn.textContent = "Starting…";
+  const beforeSig = sig(ALL);
   try {
-    const r = await fetch(`/api/backfill?days=${days}`);
-    const j = await r.json();
-    if (!j.ok) throw new Error(j.error || "backfill failed");
-    await load();
-    btn.textContent = `Loaded ${j.daysWithRevenue} days`;
-    setTimeout(() => (btn.textContent = "Backfill history"), 2500);
+    await fetch("/api/backfill", { method: "POST" }); // fire-and-forget (202)
   } catch (err) {
-    btn.textContent = "Backfill failed — see /api/test";
     console.error(err);
-    setTimeout(() => (btn.textContent = "Backfill history"), 3500);
-  } finally {
-    btn.disabled = false;
   }
+  btn.textContent = "Pulling from Printavo… (up to ~2 min)";
+  let tries = 0;
+  const poll = async () => {
+    tries++;
+    try {
+      const r = await fetch("/api/data?t=" + Date.now(), { cache: "no-store" });
+      const j = await r.json();
+      if (sig(j.series) !== beforeSig) {            // the job wrote new data
+        ALL = j.series || [];
+        BASIS = j.basis || BASIS;
+        render();
+        btn.textContent = `Loaded ${ALL.length} days`;
+        btn.disabled = false;
+        setTimeout(() => (btn.textContent = "Backfill history"), 2500);
+        return;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    if (tries < 60) {
+      setTimeout(poll, 5000); // keep checking for ~5 minutes
+    } else {
+      btn.textContent = "Still running — refresh in a bit";
+      btn.disabled = false;
+      setTimeout(() => (btn.textContent = "Backfill history"), 4000);
+    }
+  };
+  setTimeout(poll, 6000);
 });
 
 function inRange() {

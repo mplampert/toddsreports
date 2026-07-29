@@ -25,12 +25,13 @@ export default async () => {
     out.checks.invoiceSample = { ok: false, error: err.message };
   }
 
-  // 3) one payment — this is what the "collected" basis (the default) sums.
-  // transactions is a union, so Payment fields come via an inline fragment.
+  // 3) transactions is a UNION (TransactionUnion) — you can't select fields
+  // directly on it, only __typename or inline fragments. This just surfaces the
+  // member type name, in case you ever switch REVENUE_BASIS to "collected".
   try {
     const data = await printavoQuery(`
       query { transactions(first: 1) {
-        nodes { __typename ... on Payment { amount transactionDate } }
+        nodes { __typename }
       } }`);
     out.checks.transactionSample = { ok: true, data: data.transactions };
   } catch (err) {

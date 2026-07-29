@@ -17,7 +17,7 @@
 
 [[redirects]]
   from = "/api/backfill"
-  to   = "/.netlify/functions/backfill"
+  to   = "/.netlify/functions/backfill-background"
   status = 200
 
 [[redirects]]
