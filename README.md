@@ -1,21 +1,7 @@
-// Returns the stored revenue series as a sorted array the dashboard can chart.
-// GET /api/data  ->  { basis, series: [{ date, revenue }], updatedAt }
-import { readSeries } from "../../lib/store.mjs";
-import { REVENUE_BASIS } from "../../lib/printavo.mjs";
+# Todd's Sporting Goods — Printavo Revenue Dashboard
 
-export default async () => {
-  const raw = await readSeries();
-  const series = Object.entries(raw)
-    .map(([date, revenue]) => ({ date, revenue: Number(revenue) || 0 }))
-    .sort((a, b) => (a.date < b.date ? -1 : 1));
+A static Netlify site that charts **daily revenue over time**, pulled from the
+Printavo GraphQL API v2. A scheduled function records yesterday's revenue every
+night; the page reads a stored snapshot and draws the trend.
 
-  return new Response(
-    JSON.stringify({ basis: REVENUE_BASIS, count: series.length, series }),
-    {
-      headers: {
-        "content-type": "application/json",
-        "cache-control": "public, max-age=300",
-      },
-    }
-  );
-};
+Managed via Cowork.

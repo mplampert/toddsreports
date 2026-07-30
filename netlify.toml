@@ -11,8 +11,10 @@
   function = "gate"
 
 [functions]
+  # Netlify Functions v2 (ESM). Node 18+ gives us a global fetch, so no HTTP lib needed.
   node_bundler = "esbuild"
 
+# Nice, short URLs for the JSON endpoints the dashboard calls.
 [[redirects]]
   from = "/api/data"
   to   = "/.netlify/functions/get-data"
